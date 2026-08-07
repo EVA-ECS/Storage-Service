@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="EVA_ECS.Chat.Contracts" Version="1.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="RabbitMQ.Client" Version="7.2.2" />
   </ItemGroup>
 </Project>
