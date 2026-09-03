@@ -12,8 +12,19 @@ public sealed class QueueReceiver : IConsumer<ChatMessageEvent>
         _workerPool = workerPool;
     }
 
-    public Task Consume(ConsumeContext<ChatMessageEvent> context)
+    public async Task Consume(ConsumeContext<ChatMessageEvent> context)
     {
-        return _workerPool.ProcessAsync(context);
+        // MassTransit acknowledges the RabbitMQ message only after this method
+        // completes. Persist first, then forward to Delivery.
+        await _workerPool.ProcessAsync(
+            context.Message,
+            context.CancellationToken
+        );
+
+        var deliveryQueue = await context.GetSendEndpoint(
+            new Uri("queue:delivery_queue")
+        );
+
+        await deliveryQueue.Send(context.Message, context.CancellationToken);
     }
 }

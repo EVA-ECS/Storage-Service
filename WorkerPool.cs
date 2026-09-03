@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using Chat.Contracts.Events;
-using MassTransit;
-using Npgsql;
 
 namespace Storage_Service;
 
@@ -9,15 +7,18 @@ public sealed class WorkerPool
 {
     private readonly ConcurrentBag<Worker> _freeWorkers = [];
 
-    public WorkerPool(int workerCount, NpgsqlDataSource database)
+    public WorkerPool(int workerCount, IChatMessageStore messageStore)
     {
         for (var i = 0; i < workerCount; i++)
         {
-            _freeWorkers.Add(new Worker(database));
+            _freeWorkers.Add(new Worker(messageStore));
         }
     }
 
-    public async Task ProcessAsync(ConsumeContext<ChatMessageEvent> context)
+    public async Task ProcessAsync(
+        ChatMessageEvent message,
+        CancellationToken cancellationToken
+    )
     {
         if (!_freeWorkers.TryTake(out var worker))
         {
@@ -26,7 +27,7 @@ public sealed class WorkerPool
 
         try
         {
-            await worker.ProcessAsync(context);
+            await worker.ProcessAsync(message, cancellationToken);
         }
         finally
         {

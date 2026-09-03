@@ -1,15 +1,20 @@
 using Chat.Contracts.Events;
 using MassTransit;
-using Npgsql;
 using RabbitMQ.Client;
 using Storage_Service;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-var databaseConnection = builder.Configuration.GetConnectionString("Supabase");
-if (string.IsNullOrWhiteSpace(databaseConnection))
+var supabaseUrl = builder.Configuration["Supabase:Url"];
+if (!Uri.TryCreate(supabaseUrl, UriKind.Absolute, out var supabaseUri))
 {
-    throw new Exception("Supabase-Verbindung fehlt.");
+    throw new Exception("Supabase-URL fehlt oder ist ungültig.");
+}
+
+var supabaseSecretKey = builder.Configuration["Supabase:SecretKey"];
+if (string.IsNullOrWhiteSpace(supabaseSecretKey))
+{
+    throw new Exception("Supabase Secret Key fehlt.");
 }
 
 var workerCount = builder.Configuration.GetValue("Storage:WorkerCount", 3);
@@ -22,14 +27,23 @@ var rabbitHost = builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq";
 var rabbitUser = builder.Configuration["RabbitMQ:Username"] ?? "admin";
 var rabbitPassword = builder.Configuration["RabbitMQ:Password"] ?? "secret";
 
-builder.Services.AddSingleton(
-    _ => NpgsqlDataSource.Create(databaseConnection)
-);
+builder.Services.AddSingleton(_ =>
+{
+    var client = new HttpClient
+    {
+        BaseAddress = new Uri($"{supabaseUri.ToString().TrimEnd('/')}/rest/v1/")
+    };
+
+    client.DefaultRequestHeaders.Add("apikey", supabaseSecretKey);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("EVA-Storage-Service/1.0");
+    return client;
+});
+builder.Services.AddSingleton<IChatMessageStore, SupabaseChatMessageStore>();
 
 builder.Services.AddSingleton(provider =>
     new WorkerPool(
         workerCount,
-        provider.GetRequiredService<NpgsqlDataSource>()
+        provider.GetRequiredService<IChatMessageStore>()
     )
 );
 
