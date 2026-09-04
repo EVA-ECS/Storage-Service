@@ -1,6 +1,4 @@
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Serialization;
 using Chat.Contracts.Events;
 
@@ -67,10 +65,8 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
 
         if (senderRooms.Count == 0)
         {
-            return await CreatePrivateRoomAsync(
-                senderId,
-                targetId,
-                cancellationToken
+            throw new InvalidOperationException(
+                "Kein privater Raum gefunden."
             );
         }
 
@@ -88,10 +84,8 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
 
         if (targetRooms.Count == 0)
         {
-            return await CreatePrivateRoomAsync(
-                senderId,
-                targetId,
-                cancellationToken
+            throw new InvalidOperationException(
+                "Kein privater Raum gefunden."
             );
         }
 
@@ -109,57 +103,9 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
 
         return privateRooms.Count == 1
             ? privateRooms[0].Id
-            : await CreatePrivateRoomAsync(
-                senderId,
-                targetId,
-                cancellationToken
+            : throw new InvalidOperationException(
+                "Kein privater Raum gefunden."
             );
-    }
-
-    private async Task<Guid> CreatePrivateRoomAsync(
-        Guid senderId,
-        Guid targetId,
-        CancellationToken cancellationToken
-    )
-    {
-        var roomId = CreatePrivateRoomId(senderId, targetId);
-
-        await PostAsync(
-            "rooms?on_conflict=id",
-            new NewPrivateRoom(roomId, "Direct message", false, senderId),
-            "resolution=ignore-duplicates,return=minimal",
-            cancellationToken
-        );
-
-        await PostAsync(
-            "room_members?on_conflict=room_id,user_id",
-            new[]
-            {
-                new NewRoomMembership(roomId, senderId),
-                new NewRoomMembership(roomId, targetId)
-            },
-            "resolution=ignore-duplicates,return=minimal",
-            cancellationToken
-        );
-
-        return roomId;
-    }
-
-    private async Task PostAsync<T>(
-        string requestUri,
-        T body,
-        string prefer,
-        CancellationToken cancellationToken
-    )
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-        {
-            Content = JsonContent.Create(body)
-        };
-        request.Headers.TryAddWithoutValidation("Prefer", prefer);
-
-        using var response = await _client.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
     }
 
     private async Task<List<T>> GetAsync<T>(
@@ -192,40 +138,12 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
         return string.Join(',', ids.Select(id => id.ToString("D")));
     }
 
-    private static Guid CreatePrivateRoomId(Guid firstUserId, Guid secondUserId)
-    {
-        var userIds = new[]
-        {
-            firstUserId.ToString("D"),
-            secondUserId.ToString("D")
-        };
-        Array.Sort(userIds, StringComparer.Ordinal);
-
-        var input = Encoding.UTF8.GetBytes(
-            $"eva-private-room-v1:{userIds[0]}:{userIds[1]}"
-        );
-        var hash = SHA256.HashData(input);
-        return new Guid(hash.AsSpan(0, 16));
-    }
-
     private sealed record RoomMembership(
         [property: JsonPropertyName("room_id")] Guid RoomId
     );
 
     private sealed record RoomReference(
         [property: JsonPropertyName("id")] Guid Id
-    );
-
-    private sealed record NewPrivateRoom(
-        [property: JsonPropertyName("id")] Guid Id,
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("is_group")] bool IsGroup,
-        [property: JsonPropertyName("created_by")] Guid CreatedBy
-    );
-
-    private sealed record NewRoomMembership(
-        [property: JsonPropertyName("room_id")] Guid RoomId,
-        [property: JsonPropertyName("user_id")] Guid UserId
     );
 
     private sealed record StoredMessage(

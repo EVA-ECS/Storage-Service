@@ -27,11 +27,9 @@ Storage__WorkerCount=3
 über `room_members` den gemeinsamen privaten Raum (`rooms.is_group = false`).
 `Ciphertext` wird im vorhandenen Feld `messages.content` gespeichert.
 
-Im vereinfachten MVP gibt es noch keinen Group & Room Service. Existiert für
-Sender und Empfänger noch kein privater Raum, legt Storage deshalb einmalig
-einen deterministischen privaten Raum mit beiden Mitgliedschaften an. Diese
-Fallback-Verantwortung soll später in den vorgesehenen Group & Room Service
-verschoben werden.
+Existiert für Sender und Empfänger kein privater Raum, wird die Verarbeitung
+abgebrochen. Der Storage Service erstellt selbst keine Räume und sendet die
+Nachricht in diesem Fall nicht an `delivery_queue`.
 
 Der Secret Key darf nur im Backend verwendet und niemals in Frontend-Code,
 Logs oder Git eingecheckt werden.

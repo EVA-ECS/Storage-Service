@@ -6,16 +6,27 @@ public sealed class Worker
 {
     private readonly IChatMessageStore _messageStore;
 
-    public Worker(IChatMessageStore messageStore)
+    public Worker(int id, IChatMessageStore messageStore)
     {
+        Id = id;
         _messageStore = messageStore;
     }
 
-    public Task ProcessAsync(
+    public int Id { get; }
+
+    public async Task ProcessAsync(
         ChatMessageEvent message,
         CancellationToken cancellationToken
     )
     {
-        return _messageStore.StoreAsync(message, cancellationToken);
+        Console.WriteLine(
+            $"[Worker {Id}] Speichert Nachricht {message.MessageId}."
+        );
+
+        await _messageStore.StoreAsync(message, cancellationToken);
+
+        Console.WriteLine(
+            $"[Worker {Id}] Nachricht {message.MessageId} wurde gespeichert."
+        );
     }
 }

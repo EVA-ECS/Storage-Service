@@ -11,7 +11,7 @@ public sealed class WorkerPool
     {
         for (var i = 0; i < workerCount; i++)
         {
-            _freeWorkers.Add(new Worker(messageStore));
+            _freeWorkers.Add(new Worker(i + 1, messageStore));
         }
     }
 
@@ -25,6 +25,10 @@ public sealed class WorkerPool
             throw new Exception("Kein Worker frei.");
         }
 
+        Console.WriteLine(
+            $"[WorkerPool] Nachricht {message.MessageId} geht an Worker {worker.Id}."
+        );
+
         try
         {
             await worker.ProcessAsync(message, cancellationToken);
@@ -32,6 +36,9 @@ public sealed class WorkerPool
         finally
         {
             _freeWorkers.Add(worker);
+            Console.WriteLine(
+                $"[WorkerPool] Worker {worker.Id} ist wieder frei."
+            );
         }
     }
 }

@@ -68,7 +68,7 @@ public sealed class SupabaseChatMessageStoreTests
     }
 
     [Fact]
-    public async Task StoreAsync_CreatesPrivateRoomWhenNoneExists()
+    public async Task StoreAsync_ThrowsWhenPrivateRoomDoesNotExist()
     {
         var requests = new List<CapturedRequest>();
         using var client = CreateClient(async request =>
@@ -81,42 +81,15 @@ public sealed class SupabaseChatMessageStoreTests
         var store = new SupabaseChatMessageStore(client);
         var message = CreateMessage();
 
-        await store.StoreAsync(message, CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.StoreAsync(message, CancellationToken.None)
+        );
 
-        Assert.Equal(4, requests.Count);
-        var roomInsert = Assert.Single(
+        Assert.Equal("Kein privater Raum gefunden.", error.Message);
+        Assert.Single(requests);
+        Assert.DoesNotContain(
             requests,
-            item => item.Uri.AbsolutePath.EndsWith("/rooms")
-        );
-        var membershipInsert = Assert.Single(
-            requests,
-            item => item.Uri.AbsolutePath.EndsWith("/room_members") &&
-                    item.Method == HttpMethod.Post
-        );
-        var messageInsert = Assert.Single(
-            requests,
-            item => item.Uri.AbsolutePath.EndsWith("/messages")
-        );
-
-        using var roomDocument = JsonDocument.Parse(roomInsert.Body!);
-        var roomId = roomDocument.RootElement.GetProperty("id").GetGuid();
-        Assert.False(roomDocument.RootElement.GetProperty("is_group").GetBoolean());
-
-        using var membershipDocument = JsonDocument.Parse(membershipInsert.Body!);
-        var memberships = membershipDocument.RootElement.EnumerateArray().ToArray();
-        Assert.Equal(2, memberships.Length);
-        Assert.All(
-            memberships,
-            membership => Assert.Equal(
-                roomId,
-                membership.GetProperty("room_id").GetGuid()
-            )
-        );
-
-        using var messageDocument = JsonDocument.Parse(messageInsert.Body!);
-        Assert.Equal(
-            roomId,
-            messageDocument.RootElement.GetProperty("room_id").GetGuid()
+            item => item.Method == HttpMethod.Post
         );
     }
 
