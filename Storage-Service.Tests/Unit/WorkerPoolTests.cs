@@ -5,6 +5,8 @@ using Xunit.Abstractions;
 
 namespace Storage_Service.Tests;
 
+// Parallelität des Worker-Pools mit einem Testspeicher, ohne RabbitMQ oder Supabase.
+[Trait("Category", "Unit")]
 public sealed class WorkerPoolTests(ITestOutputHelper output)
 {
     [Fact]

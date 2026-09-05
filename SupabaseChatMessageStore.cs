@@ -32,6 +32,7 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
             messageId,
             roomId,
             senderId,
+            targetId,
             message.Ciphertext,
             message.Timestamp
         );
@@ -150,6 +151,7 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
         [property: JsonPropertyName("id")] Guid Id,
         [property: JsonPropertyName("room_id")] Guid RoomId,
         [property: JsonPropertyName("sender_id")] Guid SenderId,
+        [property: JsonPropertyName("receiver_id")] Guid ReceiverId,
         [property: JsonPropertyName("content")] string Content,
         [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt
     );

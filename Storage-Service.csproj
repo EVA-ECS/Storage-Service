@@ -16,5 +16,8 @@
 
   <ItemGroup>
     <Compile Remove="Storage-Service.Tests\**\*.cs" />
+    <!-- Der Worker-SDK kopiert sonst auch JSON-Dateien aus den verschachtelten Testausgaben. -->
+    <Content Remove="Storage-Service.Tests\**\*" />
+    <None Remove="Storage-Service.Tests\**\*" />
   </ItemGroup>
 </Project>

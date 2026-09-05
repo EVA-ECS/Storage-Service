@@ -5,6 +5,8 @@ using Xunit;
 
 namespace Storage_Service.Tests;
 
+// Speicherlogik mit simulierten HTTP-Antworten, ohne echte Supabase-Verbindung.
+[Trait("Category", "Unit")]
 public sealed class SupabaseChatMessageStoreTests
 {
     [Fact]
@@ -64,6 +66,8 @@ public sealed class SupabaseChatMessageStoreTests
         Assert.Equal(messageId, root.GetProperty("id").GetGuid());
         Assert.Equal(roomId, root.GetProperty("room_id").GetGuid());
         Assert.Equal(senderId, root.GetProperty("sender_id").GetGuid());
+        Assert.Equal(targetId, root.GetProperty("receiver_id").GetGuid());
+        Assert.NotEqual(roomId, root.GetProperty("receiver_id").GetGuid());
         Assert.Equal("encrypted-payload", root.GetProperty("content").GetString());
     }
 
