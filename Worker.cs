@@ -1,23 +1,32 @@
+using Chat.Contracts.Events;
+
 namespace Storage_Service;
 
-public class Worker : BackgroundService
+public sealed class Worker
 {
-    private readonly ILogger<Worker> _logger;
+    private readonly IChatMessageStore _messageStore;
 
-    public Worker(ILogger<Worker> logger)
+    public Worker(int id, IChatMessageStore messageStore)
     {
-        _logger = logger;
+        Id = id;
+        _messageStore = messageStore;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public int Id { get; }
+
+    public async Task ProcessAsync(
+        ChatMessageEvent message,
+        CancellationToken cancellationToken
+    )
     {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-            }
-            await Task.Delay(1000, stoppingToken);
-        }
+        Console.WriteLine(
+            $"[Worker {Id}] Speichert Nachricht {message.MessageId}."
+        );
+
+        await _messageStore.StoreAsync(message, cancellationToken);
+
+        Console.WriteLine(
+            $"[Worker {Id}] Nachricht {message.MessageId} wurde gespeichert."
+        );
     }
 }
