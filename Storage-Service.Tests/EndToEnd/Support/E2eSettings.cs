@@ -7,7 +7,7 @@ internal sealed class E2eSettings
     public string Password { get; } = Required("E2E_PASSWORD");
     public string TargetEmail { get; } = Required("E2E_TARGET_EMAIL");
     public Guid TargetId { get; } = Guid.Parse(Required("E2E_TARGET_ID"));
-    public Guid RoomId { get; } = Guid.Parse(Required("E2E_ROOM_ID"));
+    public Guid? RoomId { get; } = OptionalGuid("E2E_ROOM_ID");
     public string SecretKey { get; } = Required("SUPABASE_SECRET_KEY");
     public Uri Supabase { get; } = new(Required("SUPABASE_URL").TrimEnd('/') + "/");
     public Uri Frontend { get; } = LocalUrl("E2E_FRONTEND_URL", "http://localhost:8081/");
@@ -29,7 +29,7 @@ internal sealed class E2eSettings
         if ((Supabase.Scheme != "https" && !Supabase.IsLoopback) || Supabase.AbsolutePath != "/")
             throw new InvalidOperationException("SUPABASE_URL muss die Projekt-Basis-URL sein, ohne /rest/v1 und mit HTTPS.");
         if (Email.Equals(TargetEmail, StringComparison.OrdinalIgnoreCase) || RoomId == TargetId)
-            throw new InvalidOperationException("Sender, Empfänger und privater Raum müssen korrekt und getrennt konfiguriert sein.");
+            throw new InvalidOperationException("Sender, Empfänger und optionaler privater Raum müssen korrekt und getrennt konfiguriert sein.");
     }
 
     private static string Required(string name)
@@ -37,6 +37,12 @@ internal sealed class E2eSettings
         var value = Environment.GetEnvironmentVariable(name);
         return !string.IsNullOrWhiteSpace(value) ? value :
             throw new InvalidOperationException($"Umgebungsvariable {name} fehlt. Siehe EndToEnd/README.md.");
+    }
+
+    private static Guid? OptionalGuid(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return string.IsNullOrWhiteSpace(value) ? null : Guid.Parse(value);
     }
 
     private static Uri LocalUrl(string name, string fallback)

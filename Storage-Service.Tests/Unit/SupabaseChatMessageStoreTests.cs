@@ -10,7 +10,7 @@ namespace Storage_Service.Tests;
 public sealed class SupabaseChatMessageStoreTests
 {
     [Fact]
-    public async Task StoreAsync_StoresMessageInSharedPrivateRoom()
+    public async Task StoreAsync_GetsOrCreatesRoomAndStoresMessage()
     {
         var senderId = Guid.NewGuid();
         var targetId = Guid.NewGuid();
@@ -23,21 +23,9 @@ public sealed class SupabaseChatMessageStoreTests
             requests.Add(await CapturedRequest.CreateAsync(request));
             var pathAndQuery = request.RequestUri!.PathAndQuery;
 
-            if (pathAndQuery.Contains("/room_members") &&
-                pathAndQuery.Contains(senderId.ToString("D")))
+            if (pathAndQuery.Contains("/rpc/get_or_create_private_room"))
             {
                 return JsonResponse($"[{{\"room_id\":\"{roomId:D}\"}}]");
-            }
-
-            if (pathAndQuery.Contains("/room_members") &&
-                pathAndQuery.Contains(targetId.ToString("D")))
-            {
-                return JsonResponse($"[{{\"room_id\":\"{roomId:D}\"}}]");
-            }
-
-            if (pathAndQuery.Contains("/rooms"))
-            {
-                return JsonResponse($"[{{\"id\":\"{roomId:D}\"}}]");
             }
 
             return new HttpResponseMessage(HttpStatusCode.Created);
@@ -56,8 +44,26 @@ public sealed class SupabaseChatMessageStoreTests
             CancellationToken.None
         );
 
-        Assert.Equal(4, requests.Count);
-        var insert = Assert.Single(requests, item => item.Method == HttpMethod.Post);
+        Assert.Equal(2, requests.Count);
+        Assert.All(requests, item => Assert.Equal(HttpMethod.Post, item.Method));
+        var roomRequest = Assert.Single(
+            requests,
+            item => item.Uri.AbsolutePath.EndsWith("/rpc/get_or_create_private_room")
+        );
+        using var roomDocument = JsonDocument.Parse(roomRequest.Body!);
+        Assert.Equal(
+            senderId,
+            roomDocument.RootElement.GetProperty("p_sender_id").GetGuid()
+        );
+        Assert.Equal(
+            targetId,
+            roomDocument.RootElement.GetProperty("p_target_id").GetGuid()
+        );
+
+        var insert = Assert.Single(
+            requests,
+            item => item.Uri.AbsolutePath.EndsWith("/messages")
+        );
         Assert.Contains("messages?on_conflict=id", insert.Uri.PathAndQuery);
         Assert.Contains("resolution=ignore-duplicates", insert.Prefer);
 
@@ -72,42 +78,45 @@ public sealed class SupabaseChatMessageStoreTests
     }
 
     [Fact]
-    public async Task StoreAsync_ThrowsWhenPrivateRoomDoesNotExist()
+    public async Task StoreAsync_DoesNotStoreWhenRoomProvisioningFails()
     {
         var requests = new List<CapturedRequest>();
         using var client = CreateClient(async request =>
         {
             requests.Add(await CapturedRequest.CreateAsync(request));
-            return request.Method == HttpMethod.Get
-                ? JsonResponse("[]")
-                : new HttpResponseMessage(HttpStatusCode.Created);
+            return new HttpResponseMessage(HttpStatusCode.Conflict);
         });
         var store = new SupabaseChatMessageStore(client);
         var message = CreateMessage();
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
             store.StoreAsync(message, CancellationToken.None)
         );
 
-        Assert.Equal("Kein privater Raum gefunden.", error.Message);
         Assert.Single(requests);
-        Assert.DoesNotContain(
-            requests,
-            item => item.Method == HttpMethod.Post
+        Assert.EndsWith(
+            "/rpc/get_or_create_private_room",
+            requests[0].Uri.AbsolutePath
         );
     }
 
     [Fact]
     public async Task StoreAsync_PropagatesSupabaseErrors()
     {
+        var roomId = Guid.NewGuid();
+        var requestNumber = 0;
         using var client = CreateClient(_ => Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            ++requestNumber == 1
+                ? JsonResponse($"[{{\"room_id\":\"{roomId:D}\"}}]")
+                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         ));
         var store = new SupabaseChatMessageStore(client);
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
             store.StoreAsync(CreateMessage(), CancellationToken.None)
         );
+
+        Assert.Equal(2, requestNumber);
     }
 
     private static ChatMessageEvent CreateMessage()

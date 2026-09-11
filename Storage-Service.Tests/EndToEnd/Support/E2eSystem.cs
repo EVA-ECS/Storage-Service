@@ -61,26 +61,53 @@ internal sealed class E2eSystem(E2eSettings settings) : IDisposable
             p => p.GetProperty("HostPort").GetString() == expectedPort.ToString());
     }
 
-    public async Task CheckPrivateRoomAsync(Guid senderId)
+    public async Task<Guid?> FindPrivateRoomAsync(Guid senderId)
     {
         Assert.NotEqual(senderId, settings.TargetId);
         var target = await SupabaseAsync($"auth/v1/admin/users/{settings.TargetId:D}");
         Assert.Equal(settings.TargetEmail.ToLowerInvariant(), target.GetProperty("email").GetString()!.ToLowerInvariant());
-        var rooms = await SupabaseAsync($"rest/v1/rooms?select=id,is_group&id=eq.{settings.RoomId:D}");
-        Assert.False(Assert.Single(rooms.EnumerateArray()).GetProperty("is_group").GetBoolean());
-        var members = await SupabaseAsync($"rest/v1/room_members?select=user_id&room_id=eq.{settings.RoomId:D}");
-        var ids = members.EnumerateArray().Select(x => x.GetProperty("user_id").GetGuid()).ToArray();
-        Assert.Equal(2, ids.Length);
-        Assert.Contains(senderId, ids);
-        Assert.Contains(settings.TargetId, ids);
-        // Mehrdeutige private Räume könnten zu einem zufälligen LIMIT-1-Treffer führen.
         var mine = await SupabaseAsync($"rest/v1/room_members?select=room_id&user_id=eq.{senderId:D}");
         var theirs = await SupabaseAsync($"rest/v1/room_members?select=room_id&user_id=eq.{settings.TargetId:D}");
         var common = mine.EnumerateArray().Select(x => x.GetProperty("room_id").GetGuid())
             .Intersect(theirs.EnumerateArray().Select(x => x.GetProperty("room_id").GetGuid())).ToArray();
-        Assert.NotEmpty(common);
+        if (common.Length == 0)
+        {
+            Assert.Null(settings.RoomId);
+            return null;
+        }
+
         var privateRooms = await SupabaseAsync("rest/v1/rooms?select=id&is_group=eq.false&id=in.(" + string.Join(',', common) + ")");
-        Assert.Equal(settings.RoomId, Assert.Single(privateRooms.EnumerateArray()).GetProperty("id").GetGuid());
+        var exactPrivateRooms = new List<Guid>();
+        foreach (var room in privateRooms.EnumerateArray())
+        {
+            var roomId = room.GetProperty("id").GetGuid();
+            var members = await SupabaseAsync($"rest/v1/room_members?select=user_id&room_id=eq.{roomId:D}");
+            var ids = members.EnumerateArray().Select(x => x.GetProperty("user_id").GetGuid()).Order().ToArray();
+            if (ids.SequenceEqual(new[] { senderId, settings.TargetId }.Order()))
+                exactPrivateRooms.Add(roomId);
+        }
+
+        if (exactPrivateRooms.Count == 0)
+        {
+            Assert.Null(settings.RoomId);
+            return null;
+        }
+
+        var result = Assert.Single(exactPrivateRooms);
+        if (settings.RoomId.HasValue)
+            Assert.Equal(settings.RoomId.Value, result);
+        return result;
+    }
+
+    public async Task CheckPrivateRoomMembersAsync(Guid senderId, Guid roomId)
+    {
+        var rooms = await SupabaseAsync($"rest/v1/rooms?select=id,is_group&id=eq.{roomId:D}");
+        Assert.False(Assert.Single(rooms.EnumerateArray()).GetProperty("is_group").GetBoolean());
+        var members = await SupabaseAsync($"rest/v1/room_members?select=user_id&room_id=eq.{roomId:D}");
+        var ids = members.EnumerateArray().Select(x => x.GetProperty("user_id").GetGuid()).ToArray();
+        Assert.Equal(2, ids.Length);
+        Assert.Contains(senderId, ids);
+        Assert.Contains(settings.TargetId, ids);
     }
 
     public async Task<QueueState[]> QueuesAsync()

@@ -1,7 +1,7 @@
 # Empfänger-ID für private Nachrichten
 
-Storage speichert `SenderId` als `sender_id`, `TargetId` als `receiver_id` und den über
-`room_members` gefundenen gemeinsamen privaten Raum weiterhin als `room_id`.
+Storage speichert `SenderId` als `sender_id`, `TargetId` als `receiver_id` und den durch
+`get_or_create_private_room` bereitgestellten privaten Raum weiterhin als `room_id`.
 Das Event an `delivery_queue` bleibt unverändert; es enthält weiterhin `TargetId`.
 
 ## Reihenfolge der Einführung
@@ -13,7 +13,9 @@ Das Event an `delivery_queue` bleibt unverändert; es enthält weiterhin `Target
 4. Danach den neuen Storage-Service bauen und veröffentlichen.
 5. [Migration Phase 2](Migrations/20260906_require_receiver_id_for_new_messages.sql) ausführen,
    damit neue/geänderte Nachrichten nicht mehr ohne Empfänger gespeichert werden können.
-6. Den vollständigen Anwendungstest starten.
+6. [Migration für automatische Privaträume](Migrations/20260911_get_or_create_private_room.sql)
+   anwenden. Sie erstellt keine Räume vorab, sondern stellt die Funktion für Storage bereit.
+7. Den vollständigen Anwendungstest starten.
 
 Die Migration wird **nicht automatisch** beim Starten des Services oder der Tests ausgeführt.
 Ohne neue Spalte würde das Speichern fehlschlagen. Der Anwendungstest prüft deshalb vor
@@ -28,7 +30,21 @@ Die Migration zunächst ohne Supabase in einer neuen Wegwerf-Datenbank prüfen (
 Der Helfer erstellt nur einen temporären PostgreSQL-Container, führt
 [receiver_id_migration_test.sql](Tests/receiver_id_migration_test.sql) aus und entfernt den
 Container anschließend. Er prüft Wiederholbarkeit, Altbestand, Pflichtfeld, Fremdschlüssel,
-Indizes, unveränderten RLS-Status und den History-Filter in beiden Richtungen.
+Indizes, unveränderten RLS-Status und den History-Filter in beiden Richtungen. Zusätzlich
+prüft er, dass ein vorhandener Privatraum wiederverwendet und beim ersten Kontakt genau
+ein neuer Privatraum mit zwei Mitgliedern erstellt wird. Zwei parallele erste Nachrichten
+werden ebenfalls ausgeführt; danach darf für das Benutzerpaar nur ein Raum existieren.
+
+## Automatischer privater Raum
+
+Storage führt vor dem Speichern genau einen RPC-Aufruf aus. Die Datenbankfunktion sucht
+und erstellt innerhalb derselben Transaktion. A → B und B → A verwenden denselben Lock
+und damit denselben Raum. Das verhindert doppelte Räume bei gleichzeitig eintreffenden
+ersten Nachrichten. Nur der Backend-Rolle `service_role` ist der Funktionsaufruf erlaubt.
+
+Der Service darf erst mit diesem Code gestartet werden, nachdem die RPC-Migration im
+Zielprojekt angewendet wurde. Andernfalls schlägt `rpc/get_or_create_private_room` fehl
+und MassTransit wiederholt die Nachricht; sie wird nicht an `delivery_queue` gesendet.
 
 ## Was die Migration ändert
 

@@ -26,9 +26,10 @@ try {
     }
 
     $ready = $false
-    for ($attempt = 1; $attempt -le 30; $attempt++) {
-        & docker exec $containerName pg_isready -U postgres -d receiver_test | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+    for ($attempt = 1; $attempt -le 60; $attempt++) {
+        $probe = & docker exec $containerName psql -U postgres -d receiver_test `
+            -tAc 'select 1' 2>$null
+        if ($LASTEXITCODE -eq 0 -and ([string]$probe).Trim() -eq '1') {
             $ready = $true
             break
         }
@@ -43,6 +44,36 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'SQL-Migrationstest ist fehlgeschlagen.'
     }
+
+    Write-Host 'Pruefe zwei gleichzeitig eintreffende erste Nachrichten.'
+    & docker exec $containerName pgbench -U postgres -d receiver_test `
+        -n -c 2 -j 2 -t 1 -f /database/Tests/concurrent_private_room_test.sql | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Paralleltest für die automatische Raumerstellung ist fehlgeschlagen.'
+    }
+
+    $roomCountQuery = @'
+SELECT count(*)
+FROM public.rooms AS room
+WHERE room.is_group = false
+  AND EXISTS (
+      SELECT 1 FROM public.room_members AS member
+      WHERE member.room_id = room.id
+        AND member.user_id = '22222222-2222-2222-2222-222222222222'
+  )
+  AND EXISTS (
+      SELECT 1 FROM public.room_members AS member
+      WHERE member.room_id = room.id
+        AND member.user_id = '33333333-3333-3333-3333-333333333333'
+  )
+  AND (SELECT count(*) FROM public.room_members AS member WHERE member.room_id = room.id) = 2;
+'@
+    $parallelRoomCount = & docker exec $containerName psql -U postgres -d receiver_test `
+        -tAc $roomCountQuery
+    if ($LASTEXITCODE -ne 0 -or ([string]$parallelRoomCount).Trim() -ne '1') {
+        throw 'Parallele erste Nachrichten haben nicht genau einen privaten Raum erzeugt.'
+    }
+
     Write-Host 'Migrationstest erfolgreich. Supabase wurde nicht verändert.' -ForegroundColor Green
 }
 finally {

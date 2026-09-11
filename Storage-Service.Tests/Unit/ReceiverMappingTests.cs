@@ -44,6 +44,22 @@ public sealed class ReceiverMappingTests
         Assert.Empty(handler.Inserts);
     }
 
+    [Fact]
+    public async Task StoreAsync_RejectsMessageToSenderBeforeAnyHttpRequest()
+    {
+        var userId = Guid.NewGuid();
+        using var handler = new RecordingHandler(Guid.NewGuid());
+        using var client = CreateClient(handler);
+        var store = new SupabaseChatMessageStore(client);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.StoreAsync(Message(userId, userId.ToString("D")), CancellationToken.None));
+
+        Assert.Contains("unterschiedlich", error.Message);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Empty(handler.Inserts);
+    }
+
     private static void AssertMessage(JsonElement row, ChatMessageEvent message, Guid roomId, Guid sender, Guid receiver)
     {
         Assert.Equal(Guid.Parse(message.MessageId), row.GetProperty("id").GetGuid());
@@ -68,18 +84,26 @@ public sealed class ReceiverMappingTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
-            if (request.Method == HttpMethod.Post)
+            if (request.RequestUri!.AbsolutePath.EndsWith("/rpc/get_or_create_private_room"))
+            {
+                return new(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        $"[{{\"room_id\":\"{roomId:D}\"}}]",
+                        System.Text.Encoding.UTF8,
+                        "application/json"
+                    )
+                };
+            }
+
+            if (request.RequestUri.AbsolutePath.EndsWith("/messages"))
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
                 Inserts.Add(body.RootElement.Clone());
                 return new(HttpStatusCode.Created);
             }
 
-            var property = request.RequestUri!.AbsolutePath.EndsWith("/room_members") ? "room_id" : "id";
-            return new(HttpStatusCode.OK)
-            {
-                Content = new StringContent($"[{{\"{property}\":\"{roomId:D}\"}}]", System.Text.Encoding.UTF8, "application/json")
-            };
+            return new(HttpStatusCode.NotFound);
         }
     }
 }

@@ -66,7 +66,6 @@ try {
     if (-not $env:E2E_PASSWORD) { $env:E2E_PASSWORD = Read-SecretValue 'Passwort dieses Chat-Testkontos (verdeckt)' }
     if (-not $TargetEmail) { $TargetEmail = Read-Host 'E-Mail des Empfaenger-Testkontos' }
     if (-not $TargetId) { $TargetId = Read-Host 'Benutzer-ID des Empfaengers (UUID)' }
-    if (-not $RoomId) { $RoomId = Read-Host 'ID des bestehenden gemeinsamen privaten Raums (UUID)' }
     if (-not $env:SUPABASE_URL) { $env:SUPABASE_URL = Read-Host 'Supabase-Projekt-URL (ohne /rest/v1)' }
     if (-not $env:SUPABASE_SECRET_KEY) { $env:SUPABASE_SECRET_KEY = Read-SecretValue 'Supabase Secret Key (verdeckt)' }
     if (-not $env:E2E_RABBIT_PASSWORD) { $env:E2E_RABBIT_PASSWORD = Read-SecretValue 'RabbitMQ-Passwort des lokalen Testbrokers (verdeckt)' }
@@ -77,7 +76,11 @@ try {
     $env:E2E_EMAIL = $Email.Trim()
     $env:E2E_TARGET_EMAIL = $TargetEmail.Trim()
     $env:E2E_TARGET_ID = ([guid]$TargetId).ToString('D')
-    $env:E2E_ROOM_ID = ([guid]$RoomId).ToString('D')
+    if ($RoomId) {
+        $env:E2E_ROOM_ID = ([guid]$RoomId).ToString('D')
+    } else {
+        Remove-Item Env:E2E_ROOM_ID -ErrorAction SilentlyContinue
+    }
     $env:E2E_BROWSER_CHANNEL = $BrowserChannel
     $env:E2E_HEADED = if ($ShowBrowser) { '1' } else { '0' }
     $env:E2E_RESULTS_DIR = Join-Path $PSScriptRoot 'TestResults'

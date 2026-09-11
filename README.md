@@ -3,7 +3,7 @@
 Der Service macht vier Dinge:
 
 1. Nachricht aus `storage_queue` lesen.
-2. Über die Supabase Data API den privaten Raum von Sender und Empfänger finden.
+2. Über eine transaktionale Supabase-Funktion den privaten Raum bereitstellen.
 3. Mit einem freien Worker die Nachricht idempotent in Supabase speichern.
 4. Erst danach an `delivery_queue` senden.
 
@@ -23,16 +23,18 @@ RabbitMQ__Password=<RabbitMQ password>
 Storage__WorkerCount=3
 ```
 
-`TargetId` ist die Benutzer-ID des Empfängers. Der Storage Service ermittelt
-über `room_members` den gemeinsamen privaten Raum (`rooms.is_group = false`).
+`TargetId` ist die Benutzer-ID des Empfängers. Der Storage Service ruft
+`get_or_create_private_room` auf. Beim ersten Kontakt erstellt die Datenbank einen
+privaten Raum (`rooms.is_group = false`) mit genau zwei `room_members`. Weitere
+Nachrichten in beiden Richtungen verwenden denselben Raum.
 `Ciphertext` wird im vorhandenen Feld `messages.content` gespeichert.
 Zusätzlich wird `TargetId` in `messages.receiver_id` gespeichert; es ersetzt nicht `room_id`.
 Vor dem Einsatz dieses Codes die [Datenbank-Migration und Hinweise zu Altbeständen](Database/README.md)
 prüfen und anwenden. Das Delivery-Event bleibt unverändert.
 
-Existiert für Sender und Empfänger kein privater Raum, wird die Verarbeitung
-abgebrochen. Der Storage Service erstellt selbst keine Räume und sendet die
-Nachricht in diesem Fall nicht an `delivery_queue`.
+Das Bereitstellen des Raums ist atomar. So entstehen auch bei zwei gleichzeitig
+gesendeten ersten Nachrichten keine halben oder doppelten Räume. Schlägt das
+Bereitstellen oder Speichern fehl, wird nichts an `delivery_queue` gesendet.
 
 Der Secret Key darf nur im Backend verwendet und niemals in Frontend-Code,
 Logs oder Git eingecheckt werden.
@@ -50,20 +52,21 @@ dotnet run
 Die Unit-Tests liegen unter `Storage-Service.Tests/Unit/`, der vollständige Anwendungstest
 unter `Storage-Service.Tests/EndToEnd/`. Technische E2E-Hilfen sind im Unterordner `Support/` getrennt.
 
-Die sechs Unit-Tests starten (der zusätzliche Anwendungstest bleibt ohne Freigabe übersprungen):
+Die sieben Unit-Tests starten (der zusätzliche Anwendungstest bleibt ohne Freigabe übersprungen):
 
 ```powershell
 dotnet test .\Storage-Service.Tests\Storage-Service.Tests.csproj
 ```
 
-Die sechs Unit-Tests prüfen:
+Die sieben Unit-Tests prüfen:
 
-1. Nachricht im gemeinsamen privaten Raum speichern.
-2. Ohne privaten Raum keine Nachricht speichern.
+1. Privaten Raum über die Supabase-Funktion bereitstellen und die Nachricht speichern.
+2. Bei einem Fehler beim Bereitstellen keine Nachricht speichern.
 3. Supabase-Fehler an den Worker weitergeben.
 4. Drei Nachrichten mit drei Workern parallel verarbeiten.
 5. Sender und Empfänger für A → B sowie B → A korrekt speichern.
 6. Ungültige Empfänger-ID vor jeder HTTP-Abfrage ablehnen.
+7. Nachrichten an den Sender selbst vor jeder HTTP-Abfrage ablehnen.
 
 Bei Erfolg zeigt das Terminal `6` bestandene Tests, `0` Fehler und `1` übersprungenen Anwendungstest. Die Unit-Tests
 verwenden simulierte Supabase-Antworten. Echtes RabbitMQ, Supabase und
@@ -84,6 +87,6 @@ Die Anwendung und die migrierte Datenbank müssen dafür bereitstehen; echte Tes
 .\Storage-Service.Tests\Run-E2E.ps1 -ComposeFile "C:\Pfad\zur\lokalen\compose.yaml" -UseLocalStackConfig
 ```
 
-Der Helfer fragt das Passwort verdeckt ab und führt sechs Unit-Tests plus den Anwendungstest aus.
+Der Helfer fragt das Passwort verdeckt ab und führt sieben Unit-Tests plus den Anwendungstest aus.
 Testnachrichten bleiben zur Kontrolle erhalten; der Test löscht keine vorhandenen Daten.
 Siehe [Einrichtung und geprüfte Anforderungen](Storage-Service.Tests/EndToEnd/README.md).

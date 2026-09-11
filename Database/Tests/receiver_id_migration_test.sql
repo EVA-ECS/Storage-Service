@@ -2,8 +2,18 @@
 -- psql -v ON_ERROR_STOP=1 -f /database/Tests/receiver_id_migration_test.sql
 \set ON_ERROR_STOP on
 
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
+CREATE ROLE service_role NOLOGIN;
+
 CREATE TABLE public.profiles (id uuid PRIMARY KEY);
-CREATE TABLE public.rooms (id uuid PRIMARY KEY, is_group boolean NOT NULL);
+CREATE TABLE public.rooms (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    is_group boolean NOT NULL DEFAULT false,
+    created_by uuid NOT NULL REFERENCES public.profiles(id),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE public.room_members (
     room_id uuid REFERENCES public.rooms(id), user_id uuid REFERENCES public.profiles(id),
     PRIMARY KEY (room_id, user_id)
@@ -16,8 +26,16 @@ CREATE TABLE public.messages (
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
 INSERT INTO public.profiles VALUES
-    ('11111111-1111-1111-1111-111111111111'), ('22222222-2222-2222-2222-222222222222');
-INSERT INTO public.rooms VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', false);
+    ('11111111-1111-1111-1111-111111111111'),
+    ('22222222-2222-2222-2222-222222222222'),
+    ('33333333-3333-3333-3333-333333333333');
+INSERT INTO public.rooms (id, name, is_group, created_by)
+VALUES (
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    'Bestehender privater Chat',
+    false,
+    '11111111-1111-1111-1111-111111111111'
+);
 INSERT INTO public.room_members VALUES
     ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '11111111-1111-1111-1111-111111111111'),
     ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222222');
@@ -37,6 +55,8 @@ INSERT INTO public.messages (id, room_id, sender_id, content) VALUES
 -- Nach dem Storage-Deployment das Empfängerfeld für alle neuen/geänderten Zeilen verlangen.
 \ir ../Migrations/20260906_require_receiver_id_for_new_messages.sql
 \ir ../Migrations/20260906_require_receiver_id_for_new_messages.sql
+\ir ../Migrations/20260911_get_or_create_private_room.sql
+\ir ../Migrations/20260911_get_or_create_private_room.sql
 
 INSERT INTO public.messages (id, room_id, sender_id, receiver_id, content) VALUES
     ('00000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -85,8 +105,19 @@ BEGIN
     END;
 
     -- Prüft nur die Filterlogik in beiden Richtungen, keine Benutzer-Anmeldung oder RLS-Policy.
-    FOR current_user_id IN SELECT id FROM public.profiles LOOP
-        SELECT id INTO STRICT other_user_id FROM public.profiles WHERE id <> current_user_id;
+    FOR current_user_id IN
+        SELECT id FROM public.profiles
+        WHERE id IN (
+            '11111111-1111-1111-1111-111111111111',
+            '22222222-2222-2222-2222-222222222222'
+        )
+    LOOP
+        SELECT id INTO STRICT other_user_id
+        FROM public.profiles
+        WHERE id IN (
+            '11111111-1111-1111-1111-111111111111',
+            '22222222-2222-2222-2222-222222222222'
+        ) AND id <> current_user_id;
         SELECT count(*) INTO visible_rows FROM public.messages
         WHERE room_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
           AND ((sender_id = current_user_id AND receiver_id = other_user_id)
@@ -98,4 +129,91 @@ BEGIN
 END
 $test$;
 
-SELECT 'BESTANDEN: Beide Deploy-Phasen wiederholbar, Altbestand erhalten, Pflichtfeld/FK/Indizes/RLS-Status und History-Filter geprüft.' AS ergebnis;
+DO $room_test$
+DECLARE
+    existing_room_id uuid;
+    reverse_room_id uuid;
+    created_room_id uuid;
+    reused_room_id uuid;
+BEGIN
+    SELECT room_id INTO STRICT existing_room_id
+    FROM public.get_or_create_private_room(
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222'
+    );
+
+    SELECT room_id INTO STRICT reverse_room_id
+    FROM public.get_or_create_private_room(
+        '22222222-2222-2222-2222-222222222222',
+        '11111111-1111-1111-1111-111111111111'
+    );
+
+    IF existing_room_id <> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+       OR reverse_room_id <> existing_room_id THEN
+        RAISE EXCEPTION 'Ein vorhandener privater Raum wurde nicht in beiden Richtungen wiederverwendet.';
+    END IF;
+
+    SELECT room_id INTO STRICT created_room_id
+    FROM public.get_or_create_private_room(
+        '11111111-1111-1111-1111-111111111111',
+        '33333333-3333-3333-3333-333333333333'
+    );
+
+    SELECT room_id INTO STRICT reused_room_id
+    FROM public.get_or_create_private_room(
+        '33333333-3333-3333-3333-333333333333',
+        '11111111-1111-1111-1111-111111111111'
+    );
+
+    IF created_room_id <> reused_room_id THEN
+        RAISE EXCEPTION 'Der automatisch erstellte Raum wurde nicht wiederverwendet.';
+    END IF;
+
+    IF (SELECT count(*) FROM public.rooms WHERE id = created_room_id AND is_group = false) <> 1
+       OR (SELECT count(*) FROM public.room_members WHERE room_id = created_room_id) <> 2
+       OR NOT EXISTS (
+           SELECT 1 FROM public.room_members
+           WHERE room_id = created_room_id
+             AND user_id = '11111111-1111-1111-1111-111111111111'
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM public.room_members
+           WHERE room_id = created_room_id
+             AND user_id = '33333333-3333-3333-3333-333333333333'
+       ) THEN
+        RAISE EXCEPTION 'Der neue private Raum oder seine zwei Mitglieder sind unvollständig.';
+    END IF;
+
+    BEGIN
+        PERFORM * FROM public.get_or_create_private_room(
+            '11111111-1111-1111-1111-111111111111',
+            '11111111-1111-1111-1111-111111111111'
+        );
+        RAISE EXCEPTION 'Eine Nachricht an denselben Benutzer wurde akzeptiert.';
+    EXCEPTION WHEN raise_exception THEN
+        IF SQLERRM = 'Eine Nachricht an denselben Benutzer wurde akzeptiert.' THEN
+            RAISE;
+        END IF;
+    END;
+
+    BEGIN
+        PERFORM * FROM public.get_or_create_private_room(
+            '11111111-1111-1111-1111-111111111111',
+            '99999999-9999-9999-9999-999999999999'
+        );
+        RAISE EXCEPTION 'Ein unbekannter Empfänger wurde akzeptiert.';
+    EXCEPTION WHEN raise_exception THEN
+        IF SQLERRM = 'Ein unbekannter Empfänger wurde akzeptiert.' THEN
+            RAISE;
+        END IF;
+    END;
+
+    IF has_function_privilege('anon', 'public.get_or_create_private_room(uuid, uuid)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.get_or_create_private_room(uuid, uuid)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.get_or_create_private_room(uuid, uuid)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'Die RPC-Berechtigungen sind nicht auf den Storage-Backend-Zugriff begrenzt.';
+    END IF;
+END
+$room_test$;
+
+SELECT 'BESTANDEN: Migrationen, Receiver-ID, History sowie automatisches Erstellen und Wiederverwenden privater Räume geprüft.' AS ergebnis;

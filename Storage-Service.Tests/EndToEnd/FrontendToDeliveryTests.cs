@@ -69,7 +69,7 @@ public sealed class FrontendToDeliveryTests(ITestOutputHelper output)
             };
         };
 
-        output.WriteLine("[1/6] Im echten Frontend anmelden und privaten Raum prüfen.");
+        output.WriteLine("[1/6] Im echten Frontend anmelden und Teilnehmer prüfen.");
         await page.GotoAsync(new Uri(config.Frontend, "sign-in").AbsoluteUri);
         await page.GetByPlaceholder("email@beispiel.de", new() { Exact = true }).FillAsync(config.Email);
         try { await page.GetByPlaceholder("••••••••", new() { Exact = true }).FillAsync(config.Password); }
@@ -81,7 +81,10 @@ public sealed class FrontendToDeliveryTests(ITestOutputHelper output)
         using var session = JsonDocument.Parse(await login.TextAsync());
         var senderId = session.RootElement.GetProperty("user").GetProperty("userId").GetGuid();
         await connected.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        await system.CheckPrivateRoomAsync(senderId);
+        var roomBefore = await system.FindPrivateRoomAsync(senderId);
+        output.WriteLine(roomBefore.HasValue
+            ? $"Vorhandener privater Raum wird wiederverwendet: {roomBefore.Value:D}"
+            : "Noch kein privater Raum vorhanden; Storage muss ihn beim Speichern erstellen.");
         await page.GetByLabel($"Chat mit {config.TargetEmail}", new() { Exact = true }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Textbox, new() { Name = "Nachricht", Exact = true })).ToBeVisibleAsync();
 
@@ -136,6 +139,10 @@ public sealed class FrontendToDeliveryTests(ITestOutputHelper output)
                 .Where(e => e.Message.Ciphertext.StartsWith(prefix, StringComparison.Ordinal)).ToArray();
             Assert.Equal(3, rows.Length);
             Assert.Equal(3, delivery.Length);
+            var roomId = Assert.Single(rows.Select(row => row.RoomId).Distinct());
+            await system.CheckPrivateRoomMembersAsync(senderId, roomId);
+            if (roomBefore.HasValue)
+                Assert.Equal(roomBefore.Value, roomId);
             Assert.Equal(new QueueState("delivery_queue", oldDelivery.Ready + 3, 0, 0), E2eSystem.Queue(finalQueues, "delivery_queue"));
             Assert.All(finalQueues.Where(q => q.Name.EndsWith("_error") || q.Name.EndsWith("_skipped")), q => Assert.Equal(0, q.Ready + q.Unacked));
             var logs = await system.StorageLogsAsync(started);
@@ -144,7 +151,7 @@ public sealed class FrontendToDeliveryTests(ITestOutputHelper output)
                 var message = original.Message;
                 var row = Assert.Single(rows, r => r.Id == message.MessageId);
                 var forwarded = Assert.Single(delivery, e => e.Message.MessageId == message.MessageId);
-                Assert.Equal(config.RoomId, row.RoomId);
+                Assert.Equal(roomId, row.RoomId);
                 Assert.NotEqual(message.TargetId, row.RoomId);
                 Assert.Equal(message.SenderId, row.SenderId);
                 Assert.Equal(message.TargetId, row.ReceiverId);

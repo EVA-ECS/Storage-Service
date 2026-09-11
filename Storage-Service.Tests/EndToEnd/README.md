@@ -22,11 +22,12 @@ Die technischen Hilfen sind separat unter `Support/`:
 - Standard-URLs: Frontend `http://localhost:8081`, Gateway `http://localhost:8082`,
   RabbitMQ-Management `http://localhost:15673`. Andere lokale Basis-URLs sind konfigurierbar.
 - Echtes Supabase mit dem Schema `rooms`, `room_members`, `profiles`, `messages`.
-  Die [Migration für `messages.receiver_id`](../../Database/README.md) muss bereits angewendet sein,
+  Die [Migrationen für `messages.receiver_id` und die Raumfunktion](../../Database/README.md)
+  müssen bereits angewendet sein,
   und der laufende Storage muss den neuen Code enthalten. Vor dem Versand wird die Spalte geprüft.
 - Ein bestätigtes Sender-Testkonto mit bekanntem Passwort sowie ein Empfänger-Testkonto.
-  Beide müssen bereits genau einen gemeinsamen privaten Raum haben. Dieser Raum hat
-  `is_group=false` und genau diese beiden Mitglieder. Der Test erstellt keine Konten/Räume.
+  Beide Profile müssen existieren. Ein vorhandener gemeinsamer Privatraum wird wiederverwendet;
+  ohne vorhandenen Raum muss Storage beim ersten Speichern einen erstellen.
 - Kein Delivery-Consumer: Der Test endet bei `delivery_queue`.
 - Anfangs leere `storage_queue`, keine Fehler-/Skipped-Nachrichten, höchstens 97 alte
   Delivery-Nachrichten. Alte Nachrichten werden nicht gelöscht; mehr als 97 führt zum Abbruch.
@@ -36,7 +37,7 @@ Die technischen Hilfen sind separat unter `Support/`:
 Gesamtanwendung und pausiert/startet nur Storage. Der lokale Starthelfer des Gesamtprojekts
 kann zuvor verwendet werden. Nicht auf einen gemeinsam genutzten Broker oder eine Produktivumgebung richten.
 
-## Ein Befehl für sechs Unit-Tests plus Anwendungstest
+## Ein Befehl für sieben Unit-Tests plus Anwendungstest
 
 Im Storage-Projektordner, PowerShell:
 
@@ -46,13 +47,14 @@ Im Storage-Projektordner, PowerShell:
 
 `-UseLocalStackConfig` übernimmt Supabase-URL, Secret Key und RabbitMQ-Zugang nur aus dem
 ausdrücklich gewählten laufenden Storage-Testcontainer. Die Werte werden nicht ausgegeben oder gespeichert.
-E-Mail, Passwort, Empfänger und privater Raum werden abgefragt. Das Passwort wird verdeckt eingegeben.
-Das Skript baut die Tests und führt **6 Unit-Tests + 1 End-to-End-Test** aus.
+E-Mail, Passwort und Empfänger werden abgefragt. Das Passwort wird verdeckt eingegeben.
+Das Skript baut die Tests und führt **7 Unit-Tests + 1 End-to-End-Test** aus.
 
 Weitere Optionen:
 
 - `-ShowBrowser`: Browser sichtbar ausführen.
-- `-Email`, `-TargetEmail`, `-TargetId`, `-RoomId`: nicht geheime Testdaten vorgeben.
+- `-Email`, `-TargetEmail`, `-TargetId`: nicht geheime Testdaten vorgeben.
+- `-RoomId`: optional einen bereits erwarteten privaten Raum zusätzlich prüfen.
 - `-BrowserChannel ''`: den von Playwright unterstützten Chromium-Browser installieren/verwenden.
 - `-NuGetConfig "Pfad\NuGet.Config"`: Paketquelle explizit wählen.
 
@@ -76,7 +78,7 @@ Secret Store oder verdeckter Eingabe beziehen, nicht in Git, Befehlszeilenargume
 | `E2E_COMPOSE_FILE` | Absoluter Pfad der lokalen Test-Compose-Datei |
 | `E2E_EMAIL`, `E2E_PASSWORD` | Sender-Testkonto |
 | `E2E_TARGET_EMAIL`, `E2E_TARGET_ID` | Empfänger-Testkonto |
-| `E2E_ROOM_ID` | Bestehender gemeinsamer privater Raum |
+| `E2E_ROOM_ID` | Optional: erwarteter bereits vorhandener privater Raum |
 | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | Supabase-Testprojekt und Backend-Key |
 | `E2E_RABBIT_PASSWORD` | Passwort des lokalen RabbitMQ-Testbrokers |
 | `E2E_RABBIT_USER` | Optional, Standard `admin` |
@@ -90,18 +92,18 @@ Secret Store oder verdeckter Eingabe beziehen, nicht in Git, Befehlszeilenargume
 dotnet test .\Storage-Service.Tests\Storage-Service.Tests.csproj -c Release --filter "Category=EndToEnd"
 ```
 
-Ohne `E2E_RUN=1` werden beim normalen `dotnet test` sechs Unit-Tests ausgeführt;
+Ohne `E2E_RUN=1` werden beim normalen `dotnet test` sieben Unit-Tests ausgeführt;
 der eine Anwendungstest wird ausdrücklich als **übersprungen**, nicht bestanden, angezeigt.
 Mit `E2E_RUN=1` führen fehlende Konfiguration oder nicht erreichbare Dienste zu einem fehlgeschlagenen Test.
 
 ## Was geprüft wird
 
 1. Anmeldung durch die echten Formularfelder und bestätigte WebSocket-Verbindung zum Gateway.
-2. Passender vorhandener privater Raum für Sender und Empfänger.
+2. Empfängerprofil und Ausgangszustand prüfen: vorhandenen privaten Raum merken oder fehlenden Raum feststellen.
 3. Storage pausieren, drei eindeutig markierte Nachrichten über das Frontend senden.
 4. Drei Gateway-Bestätigungen und drei Events ausschließlich in `storage_queue`.
    Noch keine passenden Supabase-Einträge und keine neuen Delivery-Nachrichten.
-5. Storage starten, drei echte Speicherungen und genau drei zusätzliche Delivery-Events abwarten.
+5. Storage starten, Raum automatisch erstellen oder wiederverwenden, drei echte Speicherungen und genau drei zusätzliche Delivery-Events abwarten.
 6. IDs, Sender, Empfänger, Raum, Inhalt, Zeitstempel und kompletten fachlichen Event-Inhalt vergleichen.
    Insbesondere: Supabase `receiver_id` muss dem `TargetId` des Events entsprechen, nicht der Raum-ID.
 7. Logs nachweisen: drei überlappend arbeitende Worker; pro Nachricht Speicherung vor Weiterleitung.
@@ -115,7 +117,8 @@ Der Test vergleicht die Kennungen und Events, nicht nur einen globalen Zähler.
 
 - Keine Nachrichten werden gelöscht oder Queues geleert. Queue-Inhalte werden ausgelesen und
   mit `ack_requeue_true` wieder eingereiht; Reihenfolge/Redelivery-Status können sich dabei ändern.
-- Drei Testnachrichten bleiben in Supabase und im lokalen Delivery-Broker zur Kontrolle erhalten.
+- Drei Testnachrichten und ein dabei eventuell neu erstellter Privatraum bleiben in Supabase;
+  die Delivery-Events bleiben im lokalen Broker zur Kontrolle erhalten.
 - Storage wird nach einer Testpause auch bei einem Fehler wieder gestartet (`finally`). Bei einem
   hart beendeten Testprozess ggf. selbst `docker compose ... start storage` ausführen.
 - Die eigenen Browser-Sitzungen sind isoliert; die offene Sitzung in VS Code/Codex wird nicht benutzt.
