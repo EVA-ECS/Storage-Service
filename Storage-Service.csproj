@@ -9,6 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="EVA_ECS.Chat.Contracts" Version="1.0.1" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.6" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Storage-Service.Tests\**\*.cs" />
+    <!-- Der Worker-SDK kopiert sonst auch JSON-Dateien aus den verschachtelten Testausgaben. -->
+    <Content Remove="Storage-Service.Tests\**\*" />
+    <None Remove="Storage-Service.Tests\**\*" />
   </ItemGroup>
 </Project>
