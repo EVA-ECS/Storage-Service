@@ -5,32 +5,25 @@ namespace Storage_Service;
 
 public sealed class QueueReceiver : IConsumer<ChatMessageEvent>
 {
-    private readonly WorkerPool _workerPool;
+    private readonly IChatMessageStore _messageStore;
 
-    public QueueReceiver(WorkerPool workerPool)
+    public QueueReceiver(IChatMessageStore messageStore)
     {
-        _workerPool = workerPool;
+        _messageStore = messageStore;
     }
 
     public async Task Consume(ConsumeContext<ChatMessageEvent> context)
     {
-        Console.WriteLine(
-            $"[QueueReceiver] Nachricht {context.Message.MessageId} empfangen."
-        );
+        var msg = context.Message;
+        Console.WriteLine($"[QueueReceiver] Verarbeite Nachricht {msg.MessageId}...");
 
-        await _workerPool.ProcessAsync(
-            context.Message,
-            context.CancellationToken
-        );
+        // Direkt in Supabase speichern
+        await _messageStore.StoreAsync(msg, context.CancellationToken);
 
-        var deliveryQueue = await context.GetSendEndpoint(
-            new Uri("queue:delivery_queue")
-        );
+        Console.WriteLine($"[QueueReceiver] Nachricht {msg.MessageId} erfolgreich in Supabase gespeichert!");
 
-        await deliveryQueue.Send(context.Message, context.CancellationToken);
-
-        Console.WriteLine(
-            $"[QueueReceiver] Nachricht {context.Message.MessageId} an delivery_queue gesendet."
-        );
+        // Optional: An die delivery_queue weiterleiten für Echtzeit-Zustellung
+        var deliveryQueue = await context.GetSendEndpoint(new Uri("queue:delivery_queue"));
+        await deliveryQueue.Send(msg, context.CancellationToken);
     }
 }

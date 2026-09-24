@@ -4,8 +4,5 @@ namespace Storage_Service;
 
 public interface IChatMessageStore
 {
-    Task StoreAsync(
-        ChatMessageEvent message,
-        CancellationToken cancellationToken
-    );
+    Task StoreAsync(ChatMessageEvent message, CancellationToken cancellationToken);
 }
