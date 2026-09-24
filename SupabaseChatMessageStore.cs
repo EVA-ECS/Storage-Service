@@ -13,10 +13,7 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
         _client = client;
     }
 
-    public async Task StoreAsync(
-        ChatMessageEvent message,
-        CancellationToken cancellationToken
-    )
+    public async Task StoreAsync(ChatMessageEvent message, CancellationToken cancellationToken)
     {
         var messageId = ParseId(message.MessageId, nameof(message.MessageId));
         var senderId = ParseId(message.SenderId, nameof(message.SenderId));
@@ -24,16 +21,10 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
 
         if (senderId == targetId)
         {
-            throw new InvalidOperationException(
-                "SenderId und TargetId müssen unterschiedlich sein."
-            );
+            throw new InvalidOperationException("SenderId und TargetId müssen unterschiedlich sein.");
         }
 
-        var roomId = await GetOrCreatePrivateRoomAsync(
-            senderId,
-            targetId,
-            cancellationToken
-        );
+        var roomId = await GetOrCreatePrivateRoomAsync(senderId, targetId, cancellationToken);
 
         var storedMessage = new StoredMessage(
             messageId,
@@ -44,60 +35,38 @@ public sealed class SupabaseChatMessageStore : IChatMessageStore
             message.Timestamp
         );
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            "messages?on_conflict=id"
-        )
+        using var request = new HttpRequestMessage(HttpMethod.Post, "messages?on_conflict=id")
         {
             Content = JsonContent.Create(storedMessage)
         };
-        request.Headers.TryAddWithoutValidation(
-            "Prefer",
-            "resolution=ignore-duplicates,return=minimal"
-        );
+        request.Headers.TryAddWithoutValidation("Prefer", "resolution=ignore-duplicates,return=minimal");
 
         using var response = await _client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
-    private async Task<Guid> GetOrCreatePrivateRoomAsync(
-        Guid senderId,
-        Guid targetId,
-        CancellationToken cancellationToken
-    )
+    private async Task<Guid> GetOrCreatePrivateRoomAsync(Guid senderId, Guid targetId, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            "rpc/get_or_create_private_room"
-        )
+        using var request = new HttpRequestMessage(HttpMethod.Post, "rpc/get_or_create_private_room")
         {
-            Content = JsonContent.Create(new PrivateRoomRequest(
-                senderId,
-                targetId
-            ))
+            Content = JsonContent.Create(new PrivateRoomRequest(senderId, targetId))
         };
 
         using var response = await _client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
-        var rooms = await response.Content.ReadFromJsonAsync<List<RoomReference>>(
-            cancellationToken
-        ) ?? [];
+        var rooms = await response.Content.ReadFromJsonAsync<List<RoomReference>>(cancellationToken) ?? [];
 
         return rooms.Count == 1
             ? rooms[0].RoomId
-            : throw new InvalidOperationException(
-                "Supabase hat keinen eindeutigen privaten Raum geliefert."
-            );
+            : throw new InvalidOperationException("Supabase hat keinen eindeutigen privaten Raum geliefert.");
     }
 
     private static Guid ParseId(string value, string fieldName)
     {
         return Guid.TryParse(value, out var result)
             ? result
-            : throw new InvalidOperationException(
-                $"{fieldName} must contain a UUID."
-            );
+            : throw new InvalidOperationException($"{fieldName} must contain a UUID.");
     }
 
     private sealed record PrivateRoomRequest(
