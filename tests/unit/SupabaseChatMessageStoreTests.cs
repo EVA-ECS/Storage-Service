@@ -119,6 +119,31 @@ public sealed class SupabaseChatMessageStoreTests
         Assert.Equal(2, requestNumber);
     }
 
+    [Theory]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("[{\"room_id\":\"11111111-1111-4111-8111-111111111111\"},{\"room_id\":\"22222222-2222-4222-8222-222222222222\"}]")]
+    public async Task AmbiguousRoomResponseNeverStoresMessage(string json)
+    {
+        var calls = 0;
+        using var client = CreateClient(_ => { calls++; return Task.FromResult(JsonResponse(json)); });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new SupabaseChatMessageStore(client).StoreAsync(CreateMessage(), default));
+        Assert.Equal(1, calls);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task InvalidIdsAndSelfMessagesNeverSendHttp(int field)
+    {
+        var message = CreateMessage();
+        message = field switch { 0 => message with { MessageId = "bad" }, 1 => message with { SenderId = "bad" }, 2 => message with { TargetId = "bad" }, _ => message with { TargetId = message.SenderId } };
+        using var client = CreateClient(_ => throw new Exception("Must not send HTTP"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new SupabaseChatMessageStore(client).StoreAsync(message, default));
+    }
+
     private static ChatMessageEvent CreateMessage()
     {
         return new ChatMessageEvent(

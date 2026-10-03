@@ -94,10 +94,10 @@ try {
         & (Join-Path $PSScriptRoot 'bin\Release\net8.0\playwright.ps1') install chromium
         if ($LASTEXITCODE -ne 0) { throw 'Playwright-Browserinstallation fehlgeschlagen.' }
     }
-    # Ohne Filter: alle Unit-Tests UND der Anwendungstest laufen zusammen.
+    # Dieses Projekt enthält nur den Anwendungstest; Unit-Tests liegen in tests/unit.
     & $dotnetPath test $testProject -c Release --no-build --no-restore --logger 'console;verbosity=detailed'
     if ($LASTEXITCODE -ne 0) { throw 'Mindestens ein Test ist fehlgeschlagen. Siehe Testausgabe oben.' }
-    Write-Host 'Alle Unit-Tests und der Anwendungstest sind erfolgreich.' -ForegroundColor Green
+    Write-Host 'Der Anwendungstest ist erfolgreich.' -ForegroundColor Green
 } finally {
     foreach ($variableName in $variableNames) {
         [Environment]::SetEnvironmentVariable($variableName, $previousValues[$variableName], 'Process')
