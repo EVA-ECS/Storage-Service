@@ -48,17 +48,19 @@ dotnet run
 
 ## Tests
 
-**Einstieg:** [Testübersicht mit Ordnerstruktur, Dateilinks und Startbefehlen](Storage-Service.Tests/README.md).
-Die Unit-Tests liegen unter `Storage-Service.Tests/Unit/`, der vollständige Anwendungstest
+**Einstieg:** [Unit-Tests, Startbefehle und Coverage](tests/README.md).
+Die Unit-Tests liegen unter `tests/unit/`, der vollständige Anwendungstest
 unter `Storage-Service.Tests/EndToEnd/`. Technische E2E-Hilfen sind im Unterordner `Support/` getrennt.
 
-Die sieben Unit-Tests starten (der zusätzliche Anwendungstest bleibt ohne Freigabe übersprungen):
+Unit-Tests mit Coverage starten:
 
 ```powershell
-dotnet test .\Storage-Service.Tests\Storage-Service.Tests.csproj
+npm test
+# Ohne Coverage:
+npm run test:unit
 ```
 
-Die sieben Unit-Tests prüfen:
+Die ursprünglichen sieben Unit-Tests bleiben erhalten und prüfen:
 
 1. Privaten Raum über die Supabase-Funktion bereitstellen und die Nachricht speichern.
 2. Bei einem Fehler beim Bereitstellen keine Nachricht speichern.
@@ -68,9 +70,11 @@ Die sieben Unit-Tests prüfen:
 6. Ungültige Empfänger-ID vor jeder HTTP-Abfrage ablehnen.
 7. Nachrichten an den Sender selbst vor jeder HTTP-Abfrage ablehnen.
 
-Bei Erfolg zeigt das Terminal `6` bestandene Tests, `0` Fehler und `1` übersprungenen Anwendungstest. Die Unit-Tests
-verwenden simulierte Supabase-Antworten. Echtes RabbitMQ, Supabase und
-`delivery_queue` werden damit noch nicht geprüft.
+Zusätzliche Tests prüfen die Weiterleitung erst nach erfolgreichem Speichern,
+Fehler im Consumer, ungültige Raumantworten und die Konfiguration des Prozesses.
+Die Unit-Tests verwenden simulierte HTTP-Antworten und eine isolierte
+Konfigurationsprüfung. Es werden keine laufenden Dienste oder echten Zugangsdaten benötigt.
+Mindestens 80% Line- und Branch-Coverage werden für den eigenen Anwendungscode erzwungen.
 
 ### Vollständiger Anwendungstest
 
@@ -87,6 +91,6 @@ Die Anwendung und die migrierte Datenbank müssen dafür bereitstehen; echte Tes
 .\Storage-Service.Tests\Run-E2E.ps1 -ComposeFile "C:\Pfad\zur\lokalen\compose.yaml" -UseLocalStackConfig
 ```
 
-Der Helfer fragt das Passwort verdeckt ab und führt sieben Unit-Tests plus den Anwendungstest aus.
+Der Helfer fragt das Passwort verdeckt ab und führt ausschließlich den Anwendungstest aus.
 Testnachrichten bleiben zur Kontrolle erhalten; der Test löscht keine vorhandenen Daten.
 Siehe [Einrichtung und geprüfte Anforderungen](Storage-Service.Tests/EndToEnd/README.md).

@@ -37,7 +37,7 @@ Die technischen Hilfen sind separat unter `Support/`:
 Gesamtanwendung und pausiert/startet nur Storage. Der lokale Starthelfer des Gesamtprojekts
 kann zuvor verwendet werden. Nicht auf einen gemeinsam genutzten Broker oder eine Produktivumgebung richten.
 
-## Ein Befehl für sieben Unit-Tests plus Anwendungstest
+## Anwendungstest separat starten
 
 Im Storage-Projektordner, PowerShell:
 
@@ -48,7 +48,8 @@ Im Storage-Projektordner, PowerShell:
 `-UseLocalStackConfig` übernimmt Supabase-URL, Secret Key und RabbitMQ-Zugang nur aus dem
 ausdrücklich gewählten laufenden Storage-Testcontainer. Die Werte werden nicht ausgegeben oder gespeichert.
 E-Mail, Passwort und Empfänger werden abgefragt. Das Passwort wird verdeckt eingegeben.
-Das Skript baut die Tests und führt **7 Unit-Tests + 1 End-to-End-Test** aus.
+Das Skript baut das Anwendungstest-Projekt und führt **1 End-to-End-Test** aus.
+Die Unit-Tests laufen separat mit `npm test`; siehe [Unit-Test-Anleitung](../../tests/README.md).
 
 Weitere Optionen:
 
@@ -92,8 +93,8 @@ Secret Store oder verdeckter Eingabe beziehen, nicht in Git, Befehlszeilenargume
 dotnet test .\Storage-Service.Tests\Storage-Service.Tests.csproj -c Release --filter "Category=EndToEnd"
 ```
 
-Ohne `E2E_RUN=1` werden beim normalen `dotnet test` sieben Unit-Tests ausgeführt;
-der eine Anwendungstest wird ausdrücklich als **übersprungen**, nicht bestanden, angezeigt.
+Ohne `E2E_RUN=1` wird der eine Anwendungstest in diesem Projekt ausdrücklich
+als **übersprungen**, nicht bestanden, angezeigt. Unit-Tests liegen unter `tests/unit`.
 Mit `E2E_RUN=1` führen fehlende Konfiguration oder nicht erreichbare Dienste zu einem fehlgeschlagenen Test.
 
 ## Was geprüft wird
