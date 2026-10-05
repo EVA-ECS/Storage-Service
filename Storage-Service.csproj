@@ -20,4 +20,11 @@
     <Content Remove="Storage-Service.Tests\**\*" />
     <None Remove="Storage-Service.Tests\**\*" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+    <Content Remove="tests\**\*" />
+    <None Remove="tests\**\*" />
+    <Content Remove="package.json;package-lock.json;.config\**\*" />
+    <None Remove="package.json;package-lock.json;.config\**\*" />
+  </ItemGroup>
 </Project>
